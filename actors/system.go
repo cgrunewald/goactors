@@ -37,18 +37,21 @@ type actorLookupRequest struct {
 	responseChannel chan<- *ActorRef
 }
 
+type poisonPillMessage struct {
+	resultChannel chan<- bool
+}
+
 func (system *ActorSystem) lookupRefBackend(name string) *ActorRef {
 	impl, ok := system.registry[name]
 	if ok {
-		ref := new(ActorRef)
-		ref.name = name
-		ref.messageChannel = impl.messageChannel
-		return ref
+		return impl.context.self
 	}
 	return nil
 }
 
 func (system *ActorSystem) createActor(name string, request actorCreateRequest) *ActorRef {
+	// Running in the context of the main system goroutine
+
 	var impl = actorImpl{
 		path:           name,
 		messageChannel: make(chan actorMessage, 10),
@@ -73,15 +76,42 @@ func (system *ActorSystem) createActor(name string, request actorCreateRequest) 
 	// Owned by the new actor
 	go (func() {
 		ptrToContext := &impl.context
-		defer close(impl.messageChannel)
+		var stopChannel chan<- bool = nil
 
 		impl.actorImpl.OnStart(ptrToContext)
+
+	loop:
 		for actorMsg := range impl.messageChannel {
 			ptrToContext.sender = actorMsg.sender
-			impl.actorImpl.Receive(ptrToContext, actorMsg.message)
-			ptrToContext.sender = nil
+
+			switch actorMsg.message.(type) {
+			case poisonPillMessage:
+				pill := actorMsg.message.(poisonPillMessage)
+				childrenResultChannel := make(chan bool)
+				defer close(childrenResultChannel)
+
+				for _, v := range ptrToContext.children {
+					v.Send(poisonPillMessage{resultChannel: childrenResultChannel})
+					<-childrenResultChannel
+				}
+
+				stopChannel = pill.resultChannel
+
+				// close(impl.messageChannel) - can't close the channel since we don't know who our writers are
+				// should be garbage collected at some point
+				break loop
+			default:
+				impl.actorImpl.Receive(ptrToContext, actorMsg.message)
+				ptrToContext.sender = nil
+			}
 		}
+		ptrToContext.self = nil // self is destructed at this point
 		impl.actorImpl.OnStop()
+
+		if stopChannel != nil {
+			stopChannel <- true
+		}
+
 	})()
 	return actorRef
 }

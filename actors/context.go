@@ -9,6 +9,7 @@ type ActorContext interface {
 	SelfRef() *ActorRef
 	Path() string
 	GetChild(name string) *ActorRef
+	Stop(ref *ActorRef)
 }
 
 type actorContextImpl struct {
@@ -35,6 +36,7 @@ func (context *actorContextImpl) CreateActorFromFunc(factoryFunc func() Actor, n
 	}
 	var ref = <-responseChannel
 	if ref != nil {
+		// Context should only be updated on the goroutine owned by this actor
 		context.children[name] = ref
 	}
 
@@ -75,4 +77,10 @@ func (context *actorContextImpl) GetChild(name string) *ActorRef {
 		return child
 	}
 	return nil
+}
+
+func (context *actorContextImpl) Stop(ref *ActorRef) {
+	ref.Send(poisonPillMessage{
+		resultChannel: nil,
+	})
 }
