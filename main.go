@@ -1,82 +1,52 @@
-package main 
+package main
 
-import "fmt"
+import (
+	"bufio"
+	"fmt"
+	"os"
 
-type ActorFactory interface {
-	New() *Actor
+	"github.com/cgrunewald/goactors/actors"
+)
+
+type PingActor struct {
 }
 
-type ActorContext interface {
-	CreateActorFromFactory(factory ActorFactory) *ActorRef
-	CreateActorFromFunc(factoryFunc func () *Actor) *ActorRef
-	Sender() *ActorRef
+func (self *PingActor) OnStart(ctxt actors.ActorContext) {
+	fmt.Println("Starting ping actor", ctxt.ParentRef())
+}
+func (self *PingActor) OnStop() {
+	fmt.Println("Stopping actor")
+}
+func (self *PingActor) Receive(sender *actors.ActorRef, message interface{}) {
+	val, ok := message.(string)
+	if ok {
+		if val == "Pong" {
+			sender.Send("Ping")
+		} else if val == "Ping" {
+			sender.Send("Pong")
+		} else {
+			panic("what the fuck")
+		}
+	}
 }
 
-type Actor interface {
-	OnStart()
-	OnStop()
-	Receive(message interface{})
-	ID() string
+func newPingPongActor(t string) func() actors.Actor {
+	return func() actors.Actor {
+		return new(PingActor)
+	}
 }
-
-type ActorSender interface {
-	Tell(message interface{})
-}
-
-type ActorRef struct {
-
-}
-
-type ActorMessage struct {
-	message interface{}
-	sender ActorRef
-}
-
-type ActorImpl struct {
-	messageChannel chan interface{}
-	path string
-	messageBuffer []interface{}
-}
-
-type ActorSystem struct {
-	registry map[string]ActorImpl
-	name string
-	controlChannel chan interface{}
-}
-func (self *ActorSystem) CreateActorFromFactory(factory ActorFactory) *ActorRef {
-	return self.CreateActorFromFunc(func() *Actor { return factory.New()})
-}
-func (self *ActorSystem) CreateActorFromFunc(factoryFunc func () *Actor) *ActorRef {
-	return nil
-}
-
-func Start(system *ActorSystem) {
-	fmt.Printf("Starting actor system %s\n", system.name)
-	for msg := range system.controlChannel {
-
-	}	
-}
-
-func NewActorSystem(name string) *ActorSystem {
-	system := new(ActorSystem)
-	system.name = name
-	system.registry = make(map[string]ActorImpl)
-	system.controlChannel = make(chan interface{})
-	return system
-}
-
-type PingActor struct{
-
-}
-func (self *PingActor) OnStart() {}
-func (self *PingActor) OnStop() {}
-func (self *PingActor) Receive(message interface{}) {}
-func (self *PingActor) ID() string { return "name" }
 
 func main() {
 	fmt.Println("Hello world")
 
-	var system = NewActorSystem("test")
-	var pingActorRef = system.CreateActorFromFunc(func () *Actor { return new (PingActor)});
-	var pongActorRef = system.CreateActorFromFunc(func () *Actor { return new (PingActor)});
+	var system = actors.NewSystem("test")
+	var pingActorRef = system.CreateActorFromFunc(newPingPongActor("Ping"), "Ping")
+	var pongActorRef = system.CreateActorFromFunc(newPingPongActor("Pong"), "Pong")
+
+	fmt.Println(pingActorRef.Name(), pongActorRef.Name())
+	fmt.Println("starting pong")
+	pingActorRef.Send("Pong")
+
+	reader := bufio.NewReader(os.Stdin)
+	reader.ReadString('\n')
 }
