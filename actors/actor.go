@@ -3,7 +3,7 @@ package actors
 type Actor interface {
 	OnStart(context ActorContext)
 	OnStop()
-	Receive(sender *ActorRef, message interface{})
+	Receive(ctxt ActorContext, message interface{})
 }
 
 type ActorFactory interface {

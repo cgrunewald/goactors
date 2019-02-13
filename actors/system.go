@@ -25,23 +25,6 @@ type ActorSystem struct {
 	rootContext    actorContextImpl
 }
 
-func (self *ActorSystem) CreateActorFromFactory(factory ActorFactory, name string) *ActorRef {
-	return self.CreateActorFromFunc(func() Actor { return factory.New() }, name)
-}
-func (self *ActorSystem) CreateActorFromFunc(factoryFunc func() Actor, name string) *ActorRef {
-	var responseChannel = make(chan *ActorRef)
-
-	defer close(responseChannel)
-	self.controlChannel <- actorCreateRequest{
-		name:            name,
-		parent:          nil,
-		factoryFunction: factoryFunc,
-		responseChannel: responseChannel,
-	}
-	var ref = <-responseChannel
-	return ref
-}
-
 type actorCreateRequest struct {
 	name            string
 	parent          *ActorRef
@@ -52,18 +35,6 @@ type actorCreateRequest struct {
 type actorLookupRequest struct {
 	name            string
 	responseChannel chan<- *ActorRef
-}
-
-func (system *ActorSystem) FindActor(name string) *ActorRef {
-	var responseChannel = make(chan *ActorRef)
-
-	defer close(responseChannel)
-	system.controlChannel <- actorLookupRequest{
-		name:            name,
-		responseChannel: responseChannel,
-	}
-	var ref = <-responseChannel
-	return ref
 }
 
 func (system *ActorSystem) lookupRefBackend(name string) *ActorRef {
@@ -107,7 +78,7 @@ func (system *ActorSystem) createActor(name string, request actorCreateRequest) 
 		impl.actorImpl.OnStart(ptrToContext)
 		for actorMsg := range impl.messageChannel {
 			ptrToContext.sender = actorMsg.sender
-			impl.actorImpl.Receive(actorMsg.sender, actorMsg.message)
+			impl.actorImpl.Receive(ptrToContext, actorMsg.message)
 			ptrToContext.sender = nil
 		}
 		impl.actorImpl.OnStop()
@@ -176,7 +147,7 @@ func (root *rootActor) OnStart(ctxt ActorContext) {
 }
 func (root *rootActor) OnStop() {
 }
-func (root *rootActor) Receive(sender *ActorRef, message interface{}) {
+func (root *rootActor) Receive(ctt ActorContext, message interface{}) {
 }
 
 func NewSystem(name string) ActorContext {

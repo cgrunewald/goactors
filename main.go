@@ -17,13 +17,13 @@ func (self *PingActor) OnStart(ctxt actors.ActorContext) {
 func (self *PingActor) OnStop() {
 	fmt.Println("Stopping actor")
 }
-func (self *PingActor) Receive(sender *actors.ActorRef, message interface{}) {
+func (self *PingActor) Receive(ctxt actors.ActorContext, message interface{}) {
 	val, ok := message.(string)
 	if ok {
 		if val == "Pong" {
-			sender.Send("Ping")
+			ctxt.SenderRef().Send("Ping")
 		} else if val == "Ping" {
-			sender.Send("Pong")
+			ctxt.SenderRef().Send("Pong")
 		} else {
 			panic("what the fuck")
 		}
