@@ -43,7 +43,7 @@ func main() {
 	var pingActorRef = system.CreateActorFromFunc(newPingPongActor("Ping"), "Ping")
 	var pongActorRef = system.CreateActorFromFunc(newPingPongActor("Pong"), "Pong")
 
-	fmt.Println(pingActorRef.Name(), pongActorRef.Name())
+	fmt.Println(pingActorRef.Path(), pongActorRef.Path())
 	fmt.Println("starting pong")
 	pingActorRef.Send("Pong")
 

@@ -1,31 +1,31 @@
 package actors
 
 type ActorContext interface {
-	CreateActorFromFactory(factory ActorFactory, name string) *ActorRef
-	CreateActorFromFunc(factoryFunc func() Actor, name string) *ActorRef
-	FindActor(path string) *ActorRef
-	SenderRef() *ActorRef
-	ParentRef() *ActorRef
-	SelfRef() *ActorRef
+	CreateActorFromFactory(factory ActorFactory, name string) ActorRef
+	CreateActorFromFunc(factoryFunc func() Actor, name string) ActorRef
+	FindActor(path string) ActorRef
+	SenderRef() ActorRef
+	ParentRef() ActorRef
+	SelfRef() ActorRef
 	Path() string
-	GetChild(name string) *ActorRef
-	Stop(ref *ActorRef)
+	GetChild(name string) ActorRef
+	Stop(ref ActorRef)
 }
 
 type actorContextImpl struct {
 	path                 string
-	sender               *ActorRef
-	parent               *ActorRef
-	self                 *ActorRef
+	sender               ActorRef
+	parent               ActorRef
+	self                 ActorRef
 	systemControlChannel chan<- interface{}
-	children             map[string]*ActorRef
+	children             map[string]ActorRef
 }
 
-func (context *actorContextImpl) CreateActorFromFactory(factory ActorFactory, name string) *ActorRef {
+func (context *actorContextImpl) CreateActorFromFactory(factory ActorFactory, name string) ActorRef {
 	return context.CreateActorFromFunc(func() Actor { return factory.New() }, name)
 }
-func (context *actorContextImpl) CreateActorFromFunc(factoryFunc func() Actor, name string) *ActorRef {
-	var responseChannel = make(chan *ActorRef)
+func (context *actorContextImpl) CreateActorFromFunc(factoryFunc func() Actor, name string) ActorRef {
+	var responseChannel = make(chan ActorRef)
 
 	defer close(responseChannel)
 	context.systemControlChannel <- actorCreateRequest{
@@ -43,8 +43,8 @@ func (context *actorContextImpl) CreateActorFromFunc(factoryFunc func() Actor, n
 	return ref
 }
 
-func (context *actorContextImpl) FindActor(path string) *ActorRef {
-	var responseChannel = make(chan *ActorRef)
+func (context *actorContextImpl) FindActor(path string) ActorRef {
+	var responseChannel = make(chan ActorRef)
 
 	defer close(responseChannel)
 	context.systemControlChannel <- actorLookupRequest{
@@ -55,15 +55,15 @@ func (context *actorContextImpl) FindActor(path string) *ActorRef {
 	return ref
 }
 
-func (context *actorContextImpl) SenderRef() *ActorRef {
+func (context *actorContextImpl) SenderRef() ActorRef {
 	return context.sender
 }
 
-func (context *actorContextImpl) SelfRef() *ActorRef {
+func (context *actorContextImpl) SelfRef() ActorRef {
 	return context.self
 }
 
-func (context *actorContextImpl) ParentRef() *ActorRef {
+func (context *actorContextImpl) ParentRef() ActorRef {
 	return context.parent
 }
 
@@ -71,7 +71,7 @@ func (context *actorContextImpl) Path() string {
 	return context.path
 }
 
-func (context *actorContextImpl) GetChild(name string) *ActorRef {
+func (context *actorContextImpl) GetChild(name string) ActorRef {
 	child, ok := context.children[name]
 	if ok {
 		return child
@@ -79,7 +79,7 @@ func (context *actorContextImpl) GetChild(name string) *ActorRef {
 	return nil
 }
 
-func (context *actorContextImpl) Stop(ref *ActorRef) {
+func (context *actorContextImpl) Stop(ref ActorRef) {
 	ref.Send(poisonPillMessage{
 		resultChannel: nil,
 	})

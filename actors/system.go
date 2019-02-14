@@ -7,7 +7,7 @@ import (
 
 type actorMessage struct {
 	message interface{}
-	sender  *ActorRef
+	sender  ActorRef
 }
 
 type actorImpl struct {
@@ -27,21 +27,21 @@ type ActorSystem struct {
 
 type actorCreateRequest struct {
 	name            string
-	parent          *ActorRef
+	parent          ActorRef
 	factoryFunction func() Actor
-	responseChannel chan<- *ActorRef
+	responseChannel chan<- ActorRef
 }
 
 type actorLookupRequest struct {
 	name            string
-	responseChannel chan<- *ActorRef
+	responseChannel chan<- ActorRef
 }
 
 type poisonPillMessage struct {
 	resultChannel chan<- bool
 }
 
-func (system *ActorSystem) lookupRefBackend(name string) *ActorRef {
+func (system *ActorSystem) lookupRefBackend(name string) ActorRef {
 	impl, ok := system.registry[name]
 	if ok {
 		return impl.context.self
@@ -49,7 +49,7 @@ func (system *ActorSystem) lookupRefBackend(name string) *ActorRef {
 	return nil
 }
 
-func (system *ActorSystem) createActor(name string, request actorCreateRequest) *ActorRef {
+func (system *ActorSystem) createActor(name string, request actorCreateRequest) ActorRef {
 	// Running in the context of the main system goroutine
 
 	var impl = actorImpl{
@@ -60,7 +60,7 @@ func (system *ActorSystem) createActor(name string, request actorCreateRequest) 
 		// Memory is owned by go thread below
 		context: actorContextImpl{
 			parent:               request.parent,
-			children:             make(map[string]*ActorRef),
+			children:             make(map[string]ActorRef),
 			self:                 nil,
 			sender:               nil,
 			systemControlChannel: system.controlChannel,
@@ -68,7 +68,7 @@ func (system *ActorSystem) createActor(name string, request actorCreateRequest) 
 	}
 	system.registry[name] = impl
 
-	var actorRef = new(ActorRef)
+	var actorRef = new(actorRef)
 	actorRef.name = name
 	actorRef.messageChannel = impl.messageChannel
 	impl.context.self = actorRef
@@ -126,7 +126,7 @@ func (system *ActorSystem) start() ActorContext {
 			},
 		})
 
-	impl := system.registry[rootRef.Name()]
+	impl := system.registry[rootRef.Path()]
 	context := &impl.context
 
 	go (func() {
@@ -148,7 +148,7 @@ func (system *ActorSystem) start() ActorContext {
 					request.parent = rootRef
 				}
 
-				name = path.Join(request.parent.Name(), name)
+				name = path.Join(request.parent.Path(), name)
 
 				_, ok := system.registry[name]
 				if ok {
