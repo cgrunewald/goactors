@@ -25,6 +25,11 @@ type ActorSystem struct {
 	rootContext    actorContextImpl
 }
 
+type actorStopRequest struct {
+	responseChannel chan<- interface{}
+	path            string
+}
+
 type actorCreateRequest struct {
 	name            string
 	parent          ActorRef
@@ -108,6 +113,16 @@ func (system *ActorSystem) createActor(name string, request actorCreateRequest) 
 		ptrToContext.self = nil // self is destructed at this point
 		impl.actorImpl.OnStop()
 
+		// Have the control thread unregister the actor
+		responseChannel := make(chan interface{})
+		defer close(responseChannel)
+		ptrToContext.systemControlChannel <- actorStopRequest{
+			path:            name,
+			responseChannel: responseChannel,
+		}
+		<-responseChannel
+
+		// Notify the parent the child is stopped
 		if stopChannel != nil {
 			stopChannel <- true
 		}
@@ -140,6 +155,11 @@ func (system *ActorSystem) start() ActorContext {
 				var ref = system.lookupRefBackend(request.name)
 				request.responseChannel <- ref
 				break
+			case actorStopRequest:
+				var request = msg.(actorStopRequest)
+				delete(system.registry, request.path)
+				request.responseChannel <- true
+				break
 			case actorCreateRequest:
 				var request = msg.(actorCreateRequest)
 				var name = request.name
@@ -171,13 +191,8 @@ func (system *ActorSystem) start() ActorContext {
 	return context
 }
 
-type rootActor struct{}
-
-func (root *rootActor) OnStart(ctxt ActorContext) {
-}
-func (root *rootActor) OnStop() {
-}
-func (root *rootActor) Receive(ctt ActorContext, message interface{}) {
+type rootActor struct {
+	DefaultActor
 }
 
 func NewSystem(name string) ActorContext {
