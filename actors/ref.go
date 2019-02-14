@@ -2,7 +2,7 @@ package actors
 
 type ActorRef interface {
 	Path() string
-	Send(message interface{}) error
+	Send(sender ActorRef, message interface{})
 }
 
 type actorRef struct {
@@ -14,7 +14,6 @@ func (self *actorRef) Path() string {
 	return self.name
 }
 
-func (self *actorRef) Send(message interface{}) error {
-	self.messageChannel <- actorMessage{sender: self, message: message}
-	return nil // TOOD - return error if channel is closed
+func (self *actorRef) Send(sender ActorRef, message interface{}) {
+	self.messageChannel <- actorMessage{sender: sender, message: message}
 }

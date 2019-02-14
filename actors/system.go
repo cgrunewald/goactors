@@ -3,6 +3,8 @@ package actors
 import (
 	"fmt"
 	"path"
+	"sort"
+	"sync"
 )
 
 type actorMessage struct {
@@ -23,6 +25,7 @@ type ActorSystem struct {
 	name           string
 	controlChannel chan interface{}
 	rootContext    ActorContext
+	waitGroup      sync.WaitGroup
 }
 
 type actorStopRequest struct {
@@ -65,6 +68,7 @@ func (system *ActorSystem) createActor(name string, request actorCreateRequest) 
 		// Memory is owned by go thread below
 		context: actorContextImpl{
 			parent:               request.parent,
+			path:                 name,
 			children:             make(map[string]ActorRef),
 			self:                 nil,
 			sender:               nil,
@@ -82,22 +86,38 @@ func (system *ActorSystem) createActor(name string, request actorCreateRequest) 
 	// Owned by the new actor
 	go (func() {
 		ptrToContext := &impl.context
-		var stopChannel chan<- bool = nil
+		var stopChannel chan<- bool
 
 		impl.actorImpl.OnStart(ptrToContext)
 
+		// Once the actor is started, notify the creator
+		if request.responseChannel != nil {
+			request.responseChannel <- actorRef
+		}
+
+		fmt.Printf("Actor %s is now receiving messages\n", ptrToContext.path)
 	loop:
 		for actorMsg := range impl.messageChannel {
 			ptrToContext.sender = actorMsg.sender
 
 			switch actorMsg.message.(type) {
 			case poisonPillMessage:
+				fmt.Printf("Received poison pill %v\n", ptrToContext.path)
 				pill := actorMsg.message.(poisonPillMessage)
 				childrenResultChannel := make(chan bool)
 				defer close(childrenResultChannel)
 
-				for _, v := range ptrToContext.children {
-					v.Send(poisonPillMessage{resultChannel: childrenResultChannel})
+				// Sort the children so we have consistent stopping
+				sortedChildren := make([]string, 0, len(ptrToContext.children))
+				for k := range ptrToContext.children {
+					sortedChildren = append(sortedChildren, k)
+				}
+
+				sort.Strings(sortedChildren)
+				for _, val := range sortedChildren {
+					ptrToContext.children[val].Send(
+						ptrToContext.SelfRef(),
+						poisonPillMessage{resultChannel: childrenResultChannel})
 					<-childrenResultChannel
 				}
 
@@ -144,6 +164,7 @@ func (system *ActorSystem) start() ActorContext {
 
 	impl := system.registry[rootRef.Path()]
 	context := &impl.context
+	system.waitGroup.Add(1)
 
 	go (func() {
 		fmt.Printf("Starting actor system %s\n", system.name)
@@ -181,11 +202,7 @@ func (system *ActorSystem) start() ActorContext {
 					// Actor already exists - send back nil
 					request.responseChannel <- nil
 				} else {
-					ref := system.createActor(name, request)
-
-					// If the parent is the root, we don't need to send a response,
-					// we should just update the list of children here and return
-					request.responseChannel <- ref
+					system.createActor(name, request)
 				}
 				break
 			default:
@@ -193,6 +210,7 @@ func (system *ActorSystem) start() ActorContext {
 			}
 		}
 
+		system.waitGroup.Done()
 		fmt.Println("Shutting down actor system")
 	})()
 
@@ -211,11 +229,16 @@ func (system *ActorSystem) Context() ActorContext {
 	return system.rootContext
 }
 
+func (system *ActorSystem) Wait() {
+	system.waitGroup.Wait()
+}
+
 func NewSystem(name string) *ActorSystem {
 	system := new(ActorSystem)
 	system.name = name
 	system.registry = make(map[string]actorImpl)
 	system.controlChannel = make(chan interface{})
+	system.waitGroup = sync.WaitGroup{}
 
 	// Start the system to receive control messages (necessary for actor start)
 	system.rootContext = system.start()

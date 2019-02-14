@@ -1,9 +1,7 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
-	"os"
 
 	"github.com/cgrunewald/goactors/actors"
 )
@@ -21,9 +19,9 @@ func (self *PingActor) Receive(ctxt actors.ActorContext, message interface{}) {
 	val, ok := message.(string)
 	if ok {
 		if val == "Pong" {
-			ctxt.SenderRef().Send("Ping")
+			ctxt.SenderRef().Send(ctxt.SelfRef(), "Ping")
 		} else if val == "Ping" {
-			ctxt.SenderRef().Send("Pong")
+			ctxt.SenderRef().Send(ctxt.SelfRef(), "Pong")
 		} else {
 			panic("what the fuck")
 		}
@@ -46,8 +44,9 @@ func main() {
 
 	fmt.Println(pingActorRef.Path(), pongActorRef.Path())
 	fmt.Println("starting pong")
-	pingActorRef.Send("Pong")
+	pingActorRef.Send(pongActorRef, "Pong")
 
-	reader := bufio.NewReader(os.Stdin)
-	reader.ReadString('\n')
+	system.Wait()
+	//reader := bufio.NewReader(os.Stdin)
+	//reader.ReadString('\n')
 }

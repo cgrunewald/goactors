@@ -80,7 +80,7 @@ func (context *actorContextImpl) GetChild(name string) ActorRef {
 }
 
 func (context *actorContextImpl) Stop(ref ActorRef) {
-	ref.Send(poisonPillMessage{
+	ref.Send(context.SelfRef(), poisonPillMessage{
 		resultChannel: nil,
 	})
 }
