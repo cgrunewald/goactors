@@ -40,8 +40,9 @@ func main() {
 	fmt.Println("Hello world")
 
 	var system = actors.NewSystem("test")
-	var pingActorRef = system.CreateActorFromFunc(newPingPongActor("Ping"), "Ping")
-	var pongActorRef = system.CreateActorFromFunc(newPingPongActor("Pong"), "Pong")
+	var context = system.Context()
+	var pingActorRef = context.CreateActorFromFunc(newPingPongActor("Ping"), "Ping")
+	var pongActorRef = context.CreateActorFromFunc(newPingPongActor("Pong"), "Pong")
 
 	fmt.Println(pingActorRef.Path(), pongActorRef.Path())
 	fmt.Println("starting pong")

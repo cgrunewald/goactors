@@ -22,7 +22,7 @@ type ActorSystem struct {
 	registry       map[string]actorImpl
 	name           string
 	controlChannel chan interface{}
-	rootContext    actorContextImpl
+	rootContext    ActorContext
 }
 
 type actorStopRequest struct {
@@ -71,12 +71,13 @@ func (system *ActorSystem) createActor(name string, request actorCreateRequest) 
 			systemControlChannel: system.controlChannel,
 		},
 	}
-	system.registry[name] = impl
 
 	var actorRef = new(actorRef)
 	actorRef.name = name
 	actorRef.messageChannel = impl.messageChannel
 	impl.context.self = actorRef
+
+	system.registry[name] = impl
 
 	// Owned by the new actor
 	go (func() {
@@ -148,6 +149,7 @@ func (system *ActorSystem) start() ActorContext {
 		fmt.Printf("Starting actor system %s\n", system.name)
 
 		// Create the root actor to be the parent of all actors
+	loop:
 		for msg := range system.controlChannel {
 			switch msg.(type) {
 			case actorLookupRequest:
@@ -159,6 +161,10 @@ func (system *ActorSystem) start() ActorContext {
 				var request = msg.(actorStopRequest)
 				delete(system.registry, request.path)
 				request.responseChannel <- true
+
+				if request.path == rootRef.Path() {
+					break loop
+				}
 				break
 			case actorCreateRequest:
 				var request = msg.(actorCreateRequest)
@@ -186,6 +192,8 @@ func (system *ActorSystem) start() ActorContext {
 				fmt.Printf("Unknown control request %v", msg)
 			}
 		}
+
+		fmt.Println("Shutting down actor system")
 	})()
 
 	return context
@@ -195,13 +203,21 @@ type rootActor struct {
 	DefaultActor
 }
 
-func NewSystem(name string) ActorContext {
+func (system *ActorSystem) IsRunning() bool {
+	return len(system.registry) > 0
+}
+
+func (system *ActorSystem) Context() ActorContext {
+	return system.rootContext
+}
+
+func NewSystem(name string) *ActorSystem {
 	system := new(ActorSystem)
 	system.name = name
 	system.registry = make(map[string]actorImpl)
 	system.controlChannel = make(chan interface{})
 
 	// Start the system to receive control messages (necessary for actor start)
-	rootContext := system.start()
-	return rootContext
+	system.rootContext = system.start()
+	return system
 }
