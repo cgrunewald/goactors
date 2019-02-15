@@ -5,12 +5,19 @@ import (
 	"sort"
 )
 
+type actorProxy struct {
+	proxiedActor     ActorRef
+	messageChannel   chan<- actorMessage
+	bufferedMessages []actorMessage
+}
+
 type actorImpl struct {
 	messageChannel chan actorMessage
 	path           string
 	messageBuffer  []interface{}
 	actorImpl      Actor
 	context        actorContextImpl
+	proxy          *actorProxy
 }
 
 type Actor interface {
@@ -42,9 +49,43 @@ func (impl *actorImpl) stop(stopChannel chan<- bool) {
 	}
 }
 
+const (
+	actorMessageResultStop    = iota
+	actorMessageResultTryNext = iota
+)
+
+func (impl *actorImpl) tryProcessSystemMessage(message actorMessage) int {
+	switch message.message.(type) {
+	case poisonPillMessage:
+		fmt.Printf("Received poison pill %v\n", impl.context.path)
+		pill := message.message.(poisonPillMessage)
+		childrenResultChannel := make(chan bool)
+		defer close(childrenResultChannel)
+
+		// Sort the children so we have consistent stopping
+		sortedChildren := make([]string, 0, len(impl.context.children))
+		for k := range impl.context.children {
+			sortedChildren = append(sortedChildren, k)
+		}
+
+		sort.Strings(sortedChildren)
+		for _, val := range sortedChildren {
+			impl.context.children[val].Send(
+				impl.context.SelfRef(),
+				poisonPillMessage{resultChannel: childrenResultChannel})
+			<-childrenResultChannel
+		}
+
+		impl.stop(pill.resultChannel)
+		return actorMessageResultStop
+	default:
+		return actorMessageResultTryNext
+	}
+
+}
+
 func (impl *actorImpl) run(responseChannel chan<- ActorRef) {
 	ptrToContext := &impl.context
-	var stopChannel chan<- bool
 
 	impl.actorImpl.OnStart(ptrToContext)
 
@@ -54,43 +95,19 @@ func (impl *actorImpl) run(responseChannel chan<- ActorRef) {
 	}
 
 	fmt.Printf("Actor %s is now receiving messages\n", ptrToContext.path)
+
 loop:
 	for actorMsg := range impl.messageChannel {
 		ptrToContext.sender = actorMsg.sender
 
-		switch actorMsg.message.(type) {
-		case poisonPillMessage:
-			fmt.Printf("Received poison pill %v\n", ptrToContext.path)
-			pill := actorMsg.message.(poisonPillMessage)
-			childrenResultChannel := make(chan bool)
-			defer close(childrenResultChannel)
-
-			// Sort the children so we have consistent stopping
-			sortedChildren := make([]string, 0, len(ptrToContext.children))
-			for k := range ptrToContext.children {
-				sortedChildren = append(sortedChildren, k)
-			}
-
-			sort.Strings(sortedChildren)
-			for _, val := range sortedChildren {
-				ptrToContext.children[val].Send(
-					ptrToContext.SelfRef(),
-					poisonPillMessage{resultChannel: childrenResultChannel})
-				<-childrenResultChannel
-			}
-
-			stopChannel = pill.resultChannel
-
-			// close(impl.messageChannel) - can't close the channel since we don't know who our writers are
-			// should be garbage collected at some point
+		if systemProcessResult := impl.tryProcessSystemMessage(actorMsg); systemProcessResult == actorMessageResultStop {
+			// the actor system is shut down at this point, so just kill the loop
 			break loop
-		default:
+		} else if systemProcessResult == actorMessageResultTryNext {
 			impl.actorImpl.Receive(ptrToContext, actorMsg.message)
-			ptrToContext.sender = nil
 		}
+		ptrToContext.sender = nil
 	}
-
-	impl.stop(stopChannel)
 }
 
 func newActor(name string, controlChannel chan<- interface{}, request actorCreateRequest) *actorImpl {
