@@ -159,7 +159,9 @@ func TestTextEncode(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	context.CreateActorFromFunc(func() actors.Actor {
+
+	// Proxy actor prevents deadlocks in the actor graph.
+	context.CreateProxyActorFromFunc(func() actors.Actor {
 		return &TextReaderActor{
 			encoderActorRef: encoderActor,
 			filename:        "./odyssey.txt",

@@ -1,8 +1,8 @@
 package actors
 
 type ActorContext interface {
-	CreateActorFromFactory(factory ActorFactory, name string) ActorRef
 	CreateActorFromFunc(factoryFunc func() Actor, name string) ActorRef
+	CreateProxyActorFromFunc(factoryFunc func() Actor, name string) ActorRef
 	FindActor(path string) ActorRef
 	SenderRef() ActorRef
 	ParentRef() ActorRef
@@ -21,23 +21,33 @@ type actorContextImpl struct {
 	children             map[string]ActorRef
 }
 
-func (context *actorContextImpl) CreateActorFromFactory(factory ActorFactory, name string) ActorRef {
-	return context.CreateActorFromFunc(func() Actor { return factory.New() }, name)
-}
 func (context *actorContextImpl) CreateActorFromFunc(factoryFunc func() Actor, name string) ActorRef {
-	var responseChannel = make(chan ActorRef)
-
-	defer close(responseChannel)
-	context.systemControlChannel <- actorCreateRequest{
+	return context.createActor(actorCreateRequest{
 		name:            name,
 		parent:          context.self,
 		factoryFunction: factoryFunc,
-		responseChannel: responseChannel,
-	}
+	})
+}
+
+func (context *actorContextImpl) CreateProxyActorFromFunc(factoryFunc func() Actor, name string) ActorRef {
+	return context.createActor(actorCreateRequest{
+		name:            name,
+		parent:          context.self,
+		factoryFunction: factoryFunc,
+		proxy:           true,
+	})
+}
+
+func (context *actorContextImpl) createActor(request actorCreateRequest) ActorRef {
+	responseChannel := make(chan ActorRef)
+	request.responseChannel = responseChannel
+
+	defer close(responseChannel)
+	context.systemControlChannel <- request
 	var ref = <-responseChannel
 	if ref != nil {
 		// Context should only be updated on the goroutine owned by this actor
-		context.children[name] = ref
+		context.children[request.name] = ref
 	}
 
 	return ref

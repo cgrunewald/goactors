@@ -26,6 +26,7 @@ type actorStopRequest struct {
 
 type actorCreateRequest struct {
 	name            string
+	proxy           bool
 	parent          ActorRef
 	factoryFunction func() Actor
 	responseChannel chan<- ActorRef

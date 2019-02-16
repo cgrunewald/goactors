@@ -7,8 +7,9 @@ import (
 
 type actorProxy struct {
 	proxiedActor     ActorRef
-	messageChannel   chan<- actorMessage
+	messageChannel   chan actorMessage
 	bufferedMessages []actorMessage
+	stopChannel      chan struct{}
 }
 
 type actorImpl struct {
@@ -24,10 +25,6 @@ type Actor interface {
 	OnStart(context ActorContext)
 	OnStop()
 	Receive(ctxt ActorContext, message interface{})
-}
-
-type ActorFactory interface {
-	New() Actor
 }
 
 func (impl *actorImpl) stop(stopChannel chan<- bool) {
@@ -46,6 +43,12 @@ func (impl *actorImpl) stop(stopChannel chan<- bool) {
 	// Notify the parent the child is stopped
 	if stopChannel != nil {
 		stopChannel <- true
+	}
+
+	// Kill the proxy go routine if a proxy is being used
+	if impl.proxy != nil {
+		close(impl.proxy.stopChannel)
+		impl.proxy = nil
 	}
 }
 
@@ -82,6 +85,45 @@ func (impl *actorImpl) tryProcessSystemMessage(message actorMessage) int {
 		return actorMessageResultTryNext
 	}
 
+}
+
+func (impl *actorImpl) runProxy() {
+	// Proxy actors don't have an underlying implementation. They don't have a start/stop
+	// The don't deal with system messages. They literally forward everything to the
+	// underlying actor's message channel.
+	ptrToContext := &impl.context
+	fmt.Printf("Proxy actor %s is now receiving messages\n", ptrToContext.path)
+
+	if impl.proxy == nil {
+		panic("This is not a proxy actor")
+	}
+
+loop:
+	for {
+		if len(impl.proxy.bufferedMessages) > 0 {
+			msg := impl.proxy.bufferedMessages[0]
+			select {
+			case val := <-impl.proxy.messageChannel:
+				impl.proxy.bufferedMessages = append(impl.proxy.bufferedMessages, val)
+				break
+			case impl.messageChannel <- msg:
+				impl.proxy.bufferedMessages = impl.proxy.bufferedMessages[1:]
+				break
+			case <-impl.proxy.stopChannel:
+				break loop
+			}
+		} else {
+			select {
+			case val := <-impl.proxy.messageChannel:
+				impl.proxy.bufferedMessages = append(impl.proxy.bufferedMessages, val)
+				break
+			case <-impl.proxy.stopChannel:
+				break loop
+			}
+		}
+	}
+
+	fmt.Printf("Proxy actor %s is stopping\n", ptrToContext.path)
 }
 
 func (impl *actorImpl) run(responseChannel chan<- ActorRef) {
@@ -130,12 +172,32 @@ func newActor(name string, controlChannel chan<- interface{}, request actorCreat
 		},
 	}
 
-	var actorRef = new(actorRef)
-	actorRef.name = name
-	actorRef.messageChannel = impl.messageChannel
-	impl.context.self = actorRef
+	var ref = new(actorRef)
+	ref.name = name
+	ref.messageChannel = impl.messageChannel
+	impl.context.self = ref
 
 	// Owned by the new actor
 	go impl.run(request.responseChannel)
+
+	// Create and wire up the proxy if requested
+	if request.proxy {
+		// Create the proxy actor to store message queue and pointer to original actor
+		impl.proxy = new(actorProxy)
+		impl.proxy.messageChannel = make(chan actorMessage)
+		impl.proxy.stopChannel = make(chan struct{})
+		impl.proxy.bufferedMessages = make([]actorMessage, 0, 10)
+		impl.proxy.proxiedActor = ref
+
+		// Create a new actor ref to the proxy actor for other actors to use. This ensures
+		// the proxy's message channel is always used
+		ref := new(actorRef)
+		ref.name = name
+		ref.messageChannel = impl.proxy.messageChannel
+		impl.context.self = ref
+
+		go impl.runProxy()
+	}
+
 	return impl
 }
