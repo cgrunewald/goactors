@@ -133,6 +133,7 @@ func (a *TextEncoderActor) OnStart(context actors.ActorContext) {
 
 func (a *TextEncoderActor) Receive(context actors.ActorContext, message interface{}) {
 	fmt.Println("Received message", message)
+
 	if request, ok := message.(EncodeRequest); ok {
 		codedTokens := make([]int32, 0, len(request.tokens))
 		for _, val := range request.tokens {
@@ -159,9 +160,7 @@ func TestTextEncode(t *testing.T) {
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-
-	// Proxy actor prevents deadlocks in the actor graph.
-	context.CreateProxyActorFromFunc(func() actors.Actor {
+	context.CreateActorFromFunc(func() actors.Actor {
 		return &TextReaderActor{
 			encoderActorRef: encoderActor,
 			filename:        "./odyssey.txt",

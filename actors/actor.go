@@ -1,7 +1,6 @@
 package actors
 
 import (
-	"fmt"
 	"sort"
 )
 
@@ -60,7 +59,7 @@ const (
 func (impl *actorImpl) tryProcessSystemMessage(message actorMessage) int {
 	switch message.message.(type) {
 	case poisonPillMessage:
-		fmt.Printf("Received poison pill %v\n", impl.context.path)
+		// fmt.Printf("Received poison pill %v\n", impl.context.path)
 		pill := message.message.(poisonPillMessage)
 		childrenResultChannel := make(chan bool)
 		defer close(childrenResultChannel)
@@ -91,8 +90,8 @@ func (impl *actorImpl) runProxy() {
 	// Proxy actors don't have an underlying implementation. They don't have a start/stop
 	// The don't deal with system messages. They literally forward everything to the
 	// underlying actor's message channel.
-	ptrToContext := &impl.context
-	fmt.Printf("Proxy actor %s is now receiving messages\n", ptrToContext.path)
+	// ptrToContext := &impl.context
+	// fmt.Printf("Proxy actor %s is now receiving messages\n", ptrToContext.path)
 
 	if impl.proxy == nil {
 		panic("This is not a proxy actor")
@@ -123,7 +122,7 @@ loop:
 		}
 	}
 
-	fmt.Printf("Proxy actor %s is stopping\n", ptrToContext.path)
+	// fmt.Printf("Proxy actor %s is stopping\n", ptrToContext.path)
 }
 
 func (impl *actorImpl) run(responseChannel chan<- ActorRef) {
@@ -136,7 +135,7 @@ func (impl *actorImpl) run(responseChannel chan<- ActorRef) {
 		responseChannel <- impl.context.self
 	}
 
-	fmt.Printf("Actor %s is now receiving messages\n", ptrToContext.path)
+	// fmt.Printf("Actor %s is now receiving messages\n", ptrToContext.path)
 
 loop:
 	for actorMsg := range impl.messageChannel {
