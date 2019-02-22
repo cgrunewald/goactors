@@ -1,4 +1,4 @@
-package actors
+package goactors
 
 type DefaultActor struct{}
 

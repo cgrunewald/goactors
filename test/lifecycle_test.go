@@ -6,16 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/cgrunewald/goactors/actors"
+	"github.com/cgrunewald/goactors"
 )
 
 type PingActor struct {
-	actors.DefaultActor
-	pongActor actors.ActorRef
+	goactors.DefaultActor
+	pongActor goactors.ActorRef
 	t         *testing.T
 }
 
-func (actor *PingActor) Receive(context actors.ActorContext, message interface{}) {
+func (actor *PingActor) Receive(context goactors.ActorContext, message interface{}) {
 	msg, ok := message.(string)
 	if !ok {
 		panic("bad message")
@@ -28,13 +28,13 @@ func (actor *PingActor) Receive(context actors.ActorContext, message interface{}
 }
 
 type PongActor struct {
-	actors.DefaultActor
-	pingActor actors.ActorRef
+	goactors.DefaultActor
+	pingActor goactors.ActorRef
 	t         *testing.T
 	pingCount int8
 }
 
-func (actor *PongActor) OnStart(context actors.ActorContext) {
+func (actor *PongActor) OnStart(context goactors.ActorContext) {
 	actor.pingCount = 0
 
 	actor.pingActor = context.FindActor("/test/ping")
@@ -46,7 +46,7 @@ func (actor *PongActor) OnStart(context actors.ActorContext) {
 	actor.pingActor.Send(context.SelfRef(), "Pong")
 }
 
-func (actor *PongActor) Receive(context actors.ActorContext, message interface{}) {
+func (actor *PongActor) Receive(context goactors.ActorContext, message interface{}) {
 	msg, ok := message.(string)
 	if !ok {
 		panic("bad message")
@@ -64,15 +64,15 @@ func (actor *PongActor) Receive(context actors.ActorContext, message interface{}
 }
 
 func TestActorSystemPingPongLifecycleTest(t *testing.T) {
-	system := actors.NewSystem("test")
+	system := goactors.NewSystem("test")
 	context := system.Context()
 
-	context.CreateActorFromFunc(func() actors.Actor {
+	context.CreateActorFromFunc(func() goactors.Actor {
 		actor := new(PingActor)
 		actor.t = t
 		return actor
 	}, "ping")
-	context.CreateActorFromFunc(func() actors.Actor {
+	context.CreateActorFromFunc(func() goactors.Actor {
 		actor := new(PongActor)
 		actor.t = t
 		return actor
@@ -81,13 +81,13 @@ func TestActorSystemPingPongLifecycleTest(t *testing.T) {
 }
 
 type actor1 struct {
-	actors.DefaultActor
+	goactors.DefaultActor
 	log   *[]string
 	mutex *sync.Mutex
 	path  string
 }
 
-func (a *actor1) OnStart(context actors.ActorContext) {
+func (a *actor1) OnStart(context goactors.ActorContext) {
 	a.path = context.Path()
 	a.mutex.Lock()
 	*a.log = append(*a.log, fmt.Sprintf("Actor1 Start - %s", context.Path()))
@@ -105,14 +105,14 @@ func TestActorStartAndShutdownOrder(t *testing.T) {
 	messageLog := make([]string, 0, 10)
 	mutex := new(sync.Mutex)
 
-	actor1Factory := func() actors.Actor {
+	actor1Factory := func() goactors.Actor {
 		a := new(actor1)
 		a.mutex = mutex
 		a.log = &messageLog
 		return a
 	}
 
-	system := actors.NewSystem("test")
+	system := goactors.NewSystem("test")
 	context := system.Context()
 
 	context.CreateActorFromFunc(actor1Factory, "1")
@@ -147,7 +147,7 @@ func TestActorStartAndShutdownOrder(t *testing.T) {
 }
 
 func TestActorSystemStartedLifecycle(t *testing.T) {
-	system := actors.NewSystem("test")
+	system := goactors.NewSystem("test")
 	if system.IsRunning() != true {
 		t.Errorf("System %s is not running when it should be running\n", system.Context().Path())
 		return

@@ -4,32 +4,32 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cgrunewald/goactors/actors"
+	"github.com/cgrunewald/goactors"
 )
 
 type echoActor struct {
-	actors.DefaultActor
+	goactors.DefaultActor
 	t *testing.T
 }
 
-func (a *echoActor) Receive(context actors.ActorContext, message interface{}) {
+func (a *echoActor) Receive(context goactors.ActorContext, message interface{}) {
 	context.SenderRef().Send(context.SelfRef(), message)
 }
 
 type echoActorDoubleSender struct {
-	actors.DefaultActor
+	goactors.DefaultActor
 }
 
-func (a *echoActorDoubleSender) Receive(context actors.ActorContext, message interface{}) {
+func (a *echoActorDoubleSender) Receive(context goactors.ActorContext, message interface{}) {
 	context.SenderRef().Send(context.SelfRef(), message)
 	context.SenderRef().Send(context.SelfRef(), message)
 }
 
 func TestActorAsk(t *testing.T) {
-	system := actors.NewSystem("test")
+	system := goactors.NewSystem("test")
 	context := system.Context()
 
-	echoActor := context.CreateActorFromFunc(func() actors.Actor { return &echoActor{t: t} }, "echo")
+	echoActor := context.CreateActorFromFunc(func() goactors.Actor { return &echoActor{t: t} }, "echo")
 	future := echoActor.Ask("ping")
 
 	result := future.GetResult()
@@ -45,10 +45,10 @@ func TestActorAsk(t *testing.T) {
 }
 
 func TestActorAskDoubleSend(t *testing.T) {
-	system := actors.NewSystem("test")
+	system := goactors.NewSystem("test")
 	context := system.Context()
 
-	echoActor := context.CreateActorFromFunc(func() actors.Actor { return &echoActorDoubleSender{} }, "echo")
+	echoActor := context.CreateActorFromFunc(func() goactors.Actor { return &echoActorDoubleSender{} }, "echo")
 	future := echoActor.Ask("ping")
 
 	result := future.GetResult()
@@ -59,24 +59,24 @@ func TestActorAskDoubleSend(t *testing.T) {
 }
 
 type sendCheckerActor struct {
-	actors.DefaultActor
+	goactors.DefaultActor
 	t  *testing.T
 	wg *sync.WaitGroup
 }
 
-func (a *sendCheckerActor) Receive(context actors.ActorContext, message interface{}) {
+func (a *sendCheckerActor) Receive(context goactors.ActorContext, message interface{}) {
 	a.wg.Done()
 }
 
 func TestActorAskForward(t *testing.T) {
-	system := actors.NewSystem("test")
+	system := goactors.NewSystem("test")
 	context := system.Context()
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
 
-	echoActor := context.CreateActorFromFunc(func() actors.Actor { return &echoActor{} }, "echo")
-	sendChecker := context.CreateActorFromFunc(func() actors.Actor { return &sendCheckerActor{t: t, wg: &wg} }, "check")
+	echoActor := context.CreateActorFromFunc(func() goactors.Actor { return &echoActor{} }, "echo")
+	sendChecker := context.CreateActorFromFunc(func() goactors.Actor { return &sendCheckerActor{t: t, wg: &wg} }, "check")
 	future := echoActor.Ask("ping")
 	future.ForwardResult(context.SelfRef(), sendChecker)
 

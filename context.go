@@ -1,4 +1,4 @@
-package actors
+package goactors
 
 type ActorContext interface {
 	CreateActorFromFunc(factoryFunc func() Actor, name string) ActorRef

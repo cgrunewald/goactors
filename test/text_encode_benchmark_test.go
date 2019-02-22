@@ -7,20 +7,20 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/cgrunewald/goactors/actors"
+	"github.com/cgrunewald/goactors"
 )
 
 type TextReaderActor struct {
-	actors.DefaultActor
+	goactors.DefaultActor
 	filename          string
 	codedText         []int32
-	encoderActorRef   actors.ActorRef
+	encoderActorRef   goactors.ActorRef
 	fileReaderChannel chan bool
 	wg                *sync.WaitGroup
 	lastSeqNum        int32
 }
 
-func (a *TextReaderActor) OnStart(context actors.ActorContext) {
+func (a *TextReaderActor) OnStart(context goactors.ActorContext) {
 	if a.encoderActorRef == nil {
 		panic("Need to set the encoder actor ref on construction")
 	}
@@ -82,7 +82,7 @@ func (a *TextReaderActor) OnStop() {
 	close(a.fileReaderChannel)
 }
 
-func (a *TextReaderActor) Receive(context actors.ActorContext, message interface{}) {
+func (a *TextReaderActor) Receive(context goactors.ActorContext, message interface{}) {
 	switch message.(type) {
 	case EncodeRequest:
 		request := message.(EncodeRequest)
@@ -110,7 +110,7 @@ func (a *TextReaderActor) Receive(context actors.ActorContext, message interface
 }
 
 type TextEncoderActor struct {
-	actors.DefaultActor
+	goactors.DefaultActor
 	tokenLookup map[string]int32
 	nextTokenID int32
 }
@@ -125,13 +125,13 @@ type EncodeResponse struct {
 	tokens []int32
 }
 
-func (a *TextEncoderActor) OnStart(context actors.ActorContext) {
+func (a *TextEncoderActor) OnStart(context goactors.ActorContext) {
 	fmt.Println("Text encoder started")
 	a.tokenLookup = make(map[string]int32)
 	a.nextTokenID = 0
 }
 
-func (a *TextEncoderActor) Receive(context actors.ActorContext, message interface{}) {
+func (a *TextEncoderActor) Receive(context goactors.ActorContext, message interface{}) {
 	fmt.Println("Received message", message)
 
 	if request, ok := message.(EncodeRequest); ok {
@@ -151,16 +151,16 @@ func (a *TextEncoderActor) Receive(context actors.ActorContext, message interfac
 
 func TestTextEncode(t *testing.T) {
 
-	system := actors.NewSystem("encoder")
+	system := goactors.NewSystem("encoder")
 	context := system.Context()
 
-	encoderActor := context.CreateActorFromFunc(func() actors.Actor {
+	encoderActor := context.CreateActorFromFunc(func() goactors.Actor {
 		return &TextEncoderActor{}
 	}, "encoder")
 
 	wg := sync.WaitGroup{}
 	wg.Add(1)
-	context.CreateActorFromFunc(func() actors.Actor {
+	context.CreateProxyActorFromFunc(func() goactors.Actor {
 		return &TextReaderActor{
 			encoderActorRef: encoderActor,
 			filename:        "./odyssey.txt",

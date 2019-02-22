@@ -1,4 +1,4 @@
-package actors
+package goactors
 
 // Future represents a future result that has yet to be computed
 type Future interface {
