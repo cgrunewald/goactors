@@ -1,6 +1,7 @@
 package test
 
 import (
+	"sync"
 	"testing"
 
 	"github.com/cgrunewald/goactors/actors"
@@ -55,4 +56,29 @@ func TestActorAskDoubleSend(t *testing.T) {
 	if resultString != "ping" {
 		t.Errorf("Expected %s, received %s", "ping", "resultString")
 	}
+}
+
+type sendCheckerActor struct {
+	actors.DefaultActor
+	t  *testing.T
+	wg *sync.WaitGroup
+}
+
+func (a *sendCheckerActor) Receive(context actors.ActorContext, message interface{}) {
+	a.wg.Done()
+}
+
+func TestActorAskForward(t *testing.T) {
+	system := actors.NewSystem("test")
+	context := system.Context()
+
+	wg := sync.WaitGroup{}
+	wg.Add(1)
+
+	echoActor := context.CreateActorFromFunc(func() actors.Actor { return &echoActor{} }, "echo")
+	sendChecker := context.CreateActorFromFunc(func() actors.Actor { return &sendCheckerActor{t: t, wg: &wg} }, "check")
+	future := echoActor.Ask("ping")
+	future.ForwardResult(context.SelfRef(), sendChecker)
+
+	wg.Wait()
 }
