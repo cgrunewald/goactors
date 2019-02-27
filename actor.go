@@ -153,12 +153,16 @@ loop:
 
 func newActor(name string, controlChannel chan<- interface{}, request actorCreateRequest) *actorImpl {
 	// Running in the context of the main system goroutine
+	behavior := request.factoryFunction()
+	if behavior == nil {
+		panic("Could not create actor behavior implementation")
+	}
 
 	var impl = new(actorImpl)
 	*impl = actorImpl{
 		path:           name,
 		messageChannel: make(chan actorMessage, 10),
-		actorImpl:      request.factoryFunction(),
+		actorImpl:      behavior,
 
 		// Memory is owned by go thread below
 		context: actorContextImpl{
