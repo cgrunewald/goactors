@@ -1,3 +1,5 @@
+// Copyright 2019 Calvin Grunewald. All rights reserved.
+
 package goactors
 
 type ActorRef interface {
