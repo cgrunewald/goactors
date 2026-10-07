@@ -2,10 +2,6 @@
 
 package goactors
 
-import (
-	"sort"
-)
-
 type actorProxy struct {
 	proxiedActor     ActorRef
 	messageChannel   chan actorMessage
@@ -66,15 +62,9 @@ func (impl *actorImpl) tryProcessSystemMessage(message actorMessage) int {
 		childrenResultChannel := make(chan bool)
 		defer close(childrenResultChannel)
 
-		// Sort the children so we have consistent stopping
-		sortedChildren := make([]string, 0, len(impl.context.children))
-		for k := range impl.context.children {
-			sortedChildren = append(sortedChildren, k)
-		}
-
-		sort.Strings(sortedChildren)
-		for _, val := range sortedChildren {
-			impl.context.children[val].Send(
+		// Children are stopped one at a time in sorted order for consistent stopping
+		for _, child := range impl.context.sortedChildren() {
+			child.Send(
 				impl.context.SelfRef(),
 				poisonPillMessage{resultChannel: childrenResultChannel})
 			<-childrenResultChannel
@@ -88,43 +78,39 @@ func (impl *actorImpl) tryProcessSystemMessage(message actorMessage) int {
 
 }
 
-func (impl *actorImpl) runProxy() {
+// runProxy forwards messages from the proxy's unbounded buffer to the proxied actor's
+// mailbox. The proxy state is passed in explicitly (rather than read from impl.proxy)
+// because it is owned by this goroutine; the actor goroutine only signals shutdown by
+// closing proxy.stopChannel.
+func runProxy(proxy *actorProxy, target chan<- actorMessage) {
 	// Proxy actors don't have an underlying implementation. They don't have a start/stop
 	// The don't deal with system messages. They literally forward everything to the
 	// underlying actor's message channel.
-	// ptrToContext := &impl.context
-	// fmt.Printf("Proxy actor %s is now receiving messages\n", ptrToContext.path)
-
-	if impl.proxy == nil {
+	if proxy == nil {
 		panic("This is not a proxy actor")
 	}
 
 loop:
 	for {
-		if len(impl.proxy.bufferedMessages) > 0 {
-			msg := impl.proxy.bufferedMessages[0]
+		if len(proxy.bufferedMessages) > 0 {
+			msg := proxy.bufferedMessages[0]
 			select {
-			case val := <-impl.proxy.messageChannel:
-				impl.proxy.bufferedMessages = append(impl.proxy.bufferedMessages, val)
-				break
-			case impl.messageChannel <- msg:
-				impl.proxy.bufferedMessages = impl.proxy.bufferedMessages[1:]
-				break
-			case <-impl.proxy.stopChannel:
+			case val := <-proxy.messageChannel:
+				proxy.bufferedMessages = append(proxy.bufferedMessages, val)
+			case target <- msg:
+				proxy.bufferedMessages = proxy.bufferedMessages[1:]
+			case <-proxy.stopChannel:
 				break loop
 			}
 		} else {
 			select {
-			case val := <-impl.proxy.messageChannel:
-				impl.proxy.bufferedMessages = append(impl.proxy.bufferedMessages, val)
-				break
-			case <-impl.proxy.stopChannel:
+			case val := <-proxy.messageChannel:
+				proxy.bufferedMessages = append(proxy.bufferedMessages, val)
+			case <-proxy.stopChannel:
 				break loop
 			}
 		}
 	}
-
-	// fmt.Printf("Proxy actor %s is stopping\n", ptrToContext.path)
 }
 
 func (impl *actorImpl) run(responseChannel chan<- ActorRef) {
@@ -182,10 +168,9 @@ func newActor(name string, controlChannel chan<- interface{}, request actorCreat
 	ref.messageChannel = impl.messageChannel
 	impl.context.self = ref
 
-	// Owned by the new actor
-	go impl.run(request.responseChannel)
-
-	// Create and wire up the proxy if requested
+	// Create and wire up the proxy if requested. This must happen before the actor's
+	// goroutine is started so that the actor (and its creator, via the response
+	// channel) only ever observes the proxy ref as its self reference.
 	if request.proxy {
 		// Create the proxy actor to store message queue and pointer to original actor
 		impl.proxy = new(actorProxy)
@@ -196,13 +181,16 @@ func newActor(name string, controlChannel chan<- interface{}, request actorCreat
 
 		// Create a new actor ref to the proxy actor for other actors to use. This ensures
 		// the proxy's message channel is always used
-		ref := new(actorRef)
-		ref.name = name
-		ref.messageChannel = impl.proxy.messageChannel
-		impl.context.self = ref
+		proxyRef := new(actorRef)
+		proxyRef.name = name
+		proxyRef.messageChannel = impl.proxy.messageChannel
+		impl.context.self = proxyRef
 
-		go impl.runProxy()
+		go runProxy(impl.proxy, impl.messageChannel)
 	}
+
+	// Owned by the new actor
+	go impl.run(request.responseChannel)
 
 	return impl
 }
