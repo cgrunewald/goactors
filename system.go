@@ -112,8 +112,10 @@ func (system *ActorSystem) start() ActorContext {
 			}
 		}
 
-		system.waitGroup.Done()
+		// Log before signalling the wait group so the message is always written
+		// before Wait returns
 		fmt.Println("Shutting down actor system")
+		system.waitGroup.Done()
 	})()
 
 	return context
