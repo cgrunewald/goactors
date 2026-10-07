@@ -2,6 +2,11 @@
 
 package goactors
 
+import (
+	"sort"
+	"sync"
+)
+
 type ActorContext interface {
 	CreateActorFromFunc(factoryFunc func() Actor, name string) ActorRef
 	CreateProxyActorFromFunc(factoryFunc func() Actor, name string) ActorRef
@@ -20,7 +25,11 @@ type actorContextImpl struct {
 	parent               ActorRef
 	self                 ActorRef
 	systemControlChannel chan<- interface{}
-	children             map[string]ActorRef
+
+	// The root actor's context is handed out by ActorSystem.Context() and used from
+	// arbitrary goroutines, so access to children is guarded by a mutex
+	childrenMutex sync.Mutex
+	children      map[string]ActorRef
 }
 
 func (context *actorContextImpl) CreateActorFromFunc(factoryFunc func() Actor, name string) ActorRef {
@@ -48,8 +57,9 @@ func (context *actorContextImpl) createActor(request actorCreateRequest) ActorRe
 	context.systemControlChannel <- request
 	var ref = <-responseChannel
 	if ref != nil {
-		// Context should only be updated on the goroutine owned by this actor
+		context.childrenMutex.Lock()
 		context.children[request.name] = ref
+		context.childrenMutex.Unlock()
 	}
 
 	return ref
@@ -65,6 +75,25 @@ func (context *actorContextImpl) FindActor(path string) ActorRef {
 	}
 	var ref = <-responseChannel
 	return ref
+}
+
+// sortedChildren returns a snapshot of the actor's children, sorted by name so that
+// children are stopped in a consistent order
+func (context *actorContextImpl) sortedChildren() []ActorRef {
+	context.childrenMutex.Lock()
+	defer context.childrenMutex.Unlock()
+
+	names := make([]string, 0, len(context.children))
+	for k := range context.children {
+		names = append(names, k)
+	}
+	sort.Strings(names)
+
+	children := make([]ActorRef, 0, len(names))
+	for _, name := range names {
+		children = append(children, context.children[name])
+	}
+	return children
 }
 
 func (context *actorContextImpl) SenderRef() ActorRef {
@@ -84,6 +113,9 @@ func (context *actorContextImpl) Path() string {
 }
 
 func (context *actorContextImpl) GetChild(name string) ActorRef {
+	context.childrenMutex.Lock()
+	defer context.childrenMutex.Unlock()
+
 	child, ok := context.children[name]
 	if ok {
 		return child

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"path"
 	"sync"
+	"sync/atomic"
 )
 
 type actorMessage struct {
@@ -19,6 +20,10 @@ type ActorSystem struct {
 	controlChannel chan interface{}
 	rootContext    ActorContext
 	waitGroup      sync.WaitGroup
+
+	// Set to 1 while the root actor is registered. The registry itself is owned by
+	// the control goroutine, so IsRunning must not read it directly
+	running int32
 }
 
 type actorStopRequest struct {
@@ -63,6 +68,7 @@ func (system *ActorSystem) start() ActorContext {
 		})
 
 	system.registry[rootImpl.path] = rootImpl
+	atomic.StoreInt32(&system.running, 1)
 	context := &rootImpl.context
 	rootRef := context.self
 	system.waitGroup.Add(1)
@@ -82,6 +88,10 @@ func (system *ActorSystem) start() ActorContext {
 			case actorStopRequest:
 				var request = msg.(actorStopRequest)
 				delete(system.registry, request.path)
+
+				if request.path == rootRef.Path() {
+					atomic.StoreInt32(&system.running, 0)
+				}
 				request.responseChannel <- true
 
 				if request.path == rootRef.Path() {
@@ -124,7 +134,7 @@ type rootActor struct {
 }
 
 func (system *ActorSystem) IsRunning() bool {
-	return len(system.registry) > 0
+	return atomic.LoadInt32(&system.running) == 1
 }
 
 func (system *ActorSystem) Context() ActorContext {
