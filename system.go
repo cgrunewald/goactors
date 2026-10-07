@@ -3,6 +3,7 @@
 package goactors
 
 import (
+	"context"
 	"fmt"
 	"path"
 	"sync"
@@ -14,6 +15,11 @@ type actorMessage struct {
 }
 
 type ActorSystem struct {
+	// Used by Shutdown/Done; set up once in NewSystem
+	rootRef      ActorRef
+	shutdownOnce sync.Once
+	done         chan struct{}
+
 	registry       map[string]*actorImpl
 	name           string
 	controlChannel chan interface{}
@@ -144,5 +150,58 @@ func NewSystem(name string) *ActorSystem {
 
 	// Start the system to receive control messages (necessary for actor start)
 	system.rootContext = system.start()
+	system.rootRef = system.rootContext.SelfRef()
+
+	system.done = make(chan struct{})
+	go func() {
+		system.waitGroup.Wait()
+		close(system.done)
+	}()
+
 	return system
+}
+
+// Done returns a channel that is closed once the actor system has fully shut down,
+// i.e. after the root actor and all of its descendants have stopped.
+func (system *ActorSystem) Done() <-chan struct{} {
+	return system.done
+}
+
+// initiateShutdown sends a poison pill to the root actor exactly once. Because the
+// pill is queued behind any messages already sent, every actor finishes processing
+// its mailbox before it stops; children are stopped before their parents.
+func (system *ActorSystem) initiateShutdown() {
+	system.shutdownOnce.Do(func() {
+		select {
+		case <-system.done:
+			// Already shut down (e.g. the root actor was stopped directly)
+			return
+		default:
+		}
+
+		go system.rootRef.Send(nil, poisonPillMessage{resultChannel: nil})
+	})
+}
+
+// Shutdown gracefully stops the actor system and blocks until it has shut down.
+// Messages sent before Shutdown is called are processed before each actor stops.
+// It is safe to call Shutdown more than once, and after the root actor has been
+// stopped by other means.
+func (system *ActorSystem) Shutdown() {
+	system.initiateShutdown()
+	<-system.done
+}
+
+// ShutdownWithContext is like Shutdown but stops waiting when ctx is done, returning
+// ctx.Err(). The shutdown itself is not cancelled and continues in the background;
+// use Done or Wait to observe its completion.
+func (system *ActorSystem) ShutdownWithContext(ctx context.Context) error {
+	system.initiateShutdown()
+
+	select {
+	case <-system.done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
